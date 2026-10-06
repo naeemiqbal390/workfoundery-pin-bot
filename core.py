@@ -55,24 +55,33 @@ DEFAULTS = {
 
 
 class Table:
-    def __init__(self, sh, name, cols):
+    TTL = 20  # seconds; keeps us well under Google's free read limit (60 reads/minute)
+
+    def __init__(self, sh, name, cols, existing=None):
         self.cols = cols
-        try:
-            self.ws = sh.worksheet(name)
-        except gspread.WorksheetNotFound:
-            self.ws = sh.add_worksheet(name, rows=1000, cols=len(cols))
-            self.ws.append_row(cols)
+        self._cache, self._ts = None, 0.0
+        ws = (existing or {}).get(name)
+        if ws is None:
+            try:
+                ws = sh.worksheet(name)
+            except gspread.WorksheetNotFound:
+                ws = sh.add_worksheet(name, rows=1000, cols=len(cols))
+                ws.append_row(cols)
+        self.ws = ws
 
     def all(self):
-        recs = self.ws.get_all_records(numericise_ignore=["all"])
-        for i, r in enumerate(recs):
-            r["_row"] = i + 2
-        return recs
+        if self._cache is None or time.time() - self._ts > self.TTL:
+            recs = self.ws.get_all_records(numericise_ignore=["all"])
+            for i, r in enumerate(recs):
+                r["_row"] = i + 2
+            self._cache, self._ts = recs, time.time()
+        return [dict(r) for r in self._cache]
 
     def add(self, rows):
         if rows:
             self.ws.append_rows([[r.get(c, "") for c in self.cols] for r in rows],
                                 value_input_option="RAW")
+            self._cache = None
 
     def bulk_update(self, updates):
         data = []
@@ -82,6 +91,8 @@ class Table:
                              "values": [[v]]})
         for i in range(0, len(data), 400):
             self.ws.batch_update(data[i:i + 400], value_input_option="RAW")
+        if data:
+            self._cache = None
 
     def update(self, row, **kw):
         self.bulk_update([(row, kw)])
@@ -113,9 +124,10 @@ class Settings:
 
 class Store:
     def __init__(self, sh):
-        self.products = Table(sh, "products", PRODUCT_COLS)
-        self.pins = Table(sh, "pins", PIN_COLS)
-        self.settings = Settings(Table(sh, "settings", ["key", "value"]))
+        existing = {w.title: w for w in sh.worksheets()}   # one request instead of three
+        self.products = Table(sh, "products", PRODUCT_COLS, existing)
+        self.pins = Table(sh, "pins", PIN_COLS, existing)
+        self.settings = Settings(Table(sh, "settings", ["key", "value"], existing))
 
 
 def open_store():
