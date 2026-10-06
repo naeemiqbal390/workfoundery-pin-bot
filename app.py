@@ -2,6 +2,7 @@ import json
 import datetime as dt
 from zoneinfo import ZoneInfo
 
+import gspread
 import pandas as pd
 import streamlit as st
 
@@ -23,7 +24,13 @@ except Exception as e:
     st.stop()
 
 S = store.settings
-S.reload()
+try:
+    S.reload()
+except gspread.exceptions.APIError as e:
+    if "429" in str(e):
+        st.warning("Google's free read limit was hit. Wait one minute, then refresh this page.")
+        st.stop()
+    raise
 tz = ZoneInfo(S.get("timezone") or "UTC")
 now = dt.datetime.now(tz)
 
