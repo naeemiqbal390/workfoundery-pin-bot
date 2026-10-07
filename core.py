@@ -163,6 +163,13 @@ def parse_listing(l):
             "last_posted_at": "", "pins_posted": "0", "impressions": "0", "clicks": "0", "saves": "0"}
 
 
+def fetch_images(lid):
+    """Fallback: ask Etsy for a listing's images directly."""
+    d = etsy_get(f"/listings/{lid}/images")
+    res = sorted(d.get("results", []), key=lambda i: i.get("rank", 0))
+    return [i["url_fullxfull"] for i in res if i.get("url_fullxfull")][:6]
+
+
 def fetch_listing(lid):
     return parse_listing(etsy_get(f"/listings/{lid}", includes="Images"))
 
@@ -246,8 +253,12 @@ def generate_for(store, pr, n=None):
     n = n or int(S.get("pins_per_batch") or 8)
     boards = json.loads(S.get("boards") or "{}")
     imgs = json.loads(pr["image_urls"] or "[]")
+    if not imgs:                                   # listing came without images: fetch them now
+        imgs = fetch_images(pr["listing_id"])
+        if imgs and pr.get("_row"):
+            store.products.update(pr["_row"], image_urls=json.dumps(imgs))
     if not imgs:
-        raise ValueError("product has no images")
+        raise ValueError("Etsy returned no images for this listing")
     existing = [p["title"] for p in store.pins.all() if p["listing_id"] == pr["listing_id"]]
     items = gemini_pins(pr, list(boards) or ["General"], n, existing)
     off, rows = random.randint(0, 2), []
