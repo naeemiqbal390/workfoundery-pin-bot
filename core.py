@@ -217,7 +217,7 @@ def sync_shop(store):
 
 # ----------------------------------------------------------------- Gemini
 def gemini_pins(pr, board_names, n, avoid_titles):
-    model = cfg("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    model = cfg("GEMINI_MODEL", "gemini-3.1-flash-lite")
     prompt = f"""You write Pinterest pins for an Etsy digital product.
 Return ONLY a JSON list of {n} objects with these keys:
 - headline: max 7 words, the big text shown on the pin image
